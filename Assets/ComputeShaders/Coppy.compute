@@ -1,0 +1,554 @@
+// Each #kernel tells which function to compile; you can have many kernels
+#pragma kernel CSMain
+
+// Create a RenderTexture with enableRandomWrite flag and set it
+// with cs.SetTexture
+RWTexture2D<float4> Result;
+
+
+#define M_PI 3.14159265358979
+
+float4x4 _CameraToWorld;
+float4x4 _CameraInverseProjection;
+float3 _LightDirection;
+
+float a1;
+float a2;
+float a3;
+
+float b1;
+float b2;
+float b3;
+
+float CX;
+float CY;
+float CZ;
+
+float scale;
+float epsillon;
+
+float3 colorMultiplier;
+float3 colorOffset;
+
+
+// [pydefine]
+#define ANTIALIASING_SAMPLES 1
+#define AMBIENT_OCCLUSION_STRENGTH 0.01
+#define AMBIENT_OCCLUSION_COLOR_DELTA float3(0.8,0.8,0.8)
+#define BACKGROUND_COLOR float3(0.6,0.6,0.9)
+#define DEPTH_OF_FIELD_STRENGTH 0.0
+#define DEPTH_OF_FIELD_DISTANCE 1.0
+#define DIFFUSE_ENABLED 0
+#define DIFFUSE_ENHANCED_ENABLED 1
+#define EXPOSURE 1.0
+#define FIELD_OF_VIEW 60.0
+#define FOG_ENABLED 0
+#define GLOW_ENABLED 0
+#define GLOW_COLOR_DELTA float3(-0.2,0.5,-0.2)
+#define GLOW_SHARPNESS 4.0
+#define LIGHT_COLOR float3(1.0,0.9,0.6)
+#define LIGHT_DIRECTION float3(-0.36,0.48,-0.8)
+#define LOD_MULTIPLIER 10.0
+#define MAX_MARCHES 1000
+#define MAX_DIST 50.0
+#define MIN_DIST 1e-5
+#define MOTION_BLUR_LEVEL 0
+#define MOTION_BLUR_RATIO 1.0
+#define ODS 0
+#define ORTHOGONAL_PROJECTION 0
+#define ORTHOGONAL_ZOOM 5.0
+#define REFLECTION_LEVEL 0
+#define REFLECTION_ATTENUATION 0.6
+#define SHADOWS_ENABLED 1
+#define SHADOW_DARKNESS 0.8
+#define SHADOW_SHARPNESS 16.0
+#define SPECULAR_HIGHLIGHT 40
+#define SUN_ENABLED 1
+#define SUN_SIZE 0.005
+#define SUN_SHARPNESS 2.0
+#define VIGNETTE_FOREGROUND 0
+#define VIGNETTE_STRENGTH 0.5
+#define DE de_obj1826121950160
+#define COL col_obj1826121950160
+#define FRACTAL_ITERATIONS 30
+// [/pydefine]
+
+// [pyvars]
+// [/pyvars]
+
+const float FOCAL_DIST = 1.0 / tan(M_PI * FIELD_OF_VIEW / 360.0);
+
+float rand(float s, float minV, float maxV) {
+	float r = sin(s*s*27.12345 + 1000.9876 / (s*s + 1e-5));
+	return (r + 1.0) * 0.5 * (maxV - minV) + minV;
+}
+float smin(float a, float b, float k) {
+	float h = clamp(0.5 + 0.5*(b-a)/k, 0.0, 1.0 );
+	return lerp(b, a, h) - k*h*(1.0 - h);
+	//return -log(exp(-a/k) + exp(-b/k))*k;
+}
+
+
+
+float3 rotate2(float3 p)
+{
+    float3x3 RX;
+    RX[0][0] = 1;
+    RX[0][1] = 0;
+    RX[0][2] = 0;
+
+    RX[1][0] = 0;
+    RX[1][1] = cos(b1);
+    RX[1][2] = sin(b1);
+
+    RX[2][0] = 0;
+    RX[2][1] = -sin(b1);
+    RX[2][2] = cos(b1);
+
+    float3x3 RY;
+    RY[0][0] = cos(b2);
+    RY[0][1] = 0;
+    RY[0][2] = -sin(b2);
+
+    RY[1][0] = 0;
+    RY[1][1] = 1;
+    RY[1][2] = 0;
+
+    RY[2][0] = sin(b2);
+    RY[2][1] = 0;
+    RY[2][2] = cos(b2);
+    
+
+    float3x3 RZ;
+    RZ[0][0] = cos(b3);
+    RZ[0][1] = sin(b3);
+    RZ[0][2] = 0;
+
+    RZ[1][0] = -sin(b3);
+    RZ[1][1] = cos(b3);
+    RZ[1][2] = 0;
+
+    RZ[2][0] = 0;
+    RZ[2][1] = 0;
+    RZ[2][2] = 1;
+    
+    return mul(RZ, mul(RY, mul(RX, p)));
+}
+
+float3 rotate1(float3 p)
+{
+    float3x3 RX;
+    RX[0][0] = 1;
+    RX[0][1] = 0;
+    RX[0][2] = 0;
+
+    RX[1][0] = 0;
+    RX[1][1] = cos(a1);
+    RX[1][2] = sin(a1);
+
+    RX[2][0] = 0;
+    RX[2][1] = -sin(a1);
+    RX[2][2] = cos(a1);
+
+    float3x3 RY;
+    RY[0][0] = cos(a2);
+    RY[0][1] = 0;
+    RY[0][2] = -sin(a2);
+
+    RY[1][0] = 0;
+    RY[1][1] = 1;
+    RY[1][2] = 0;
+
+    RY[2][0] = sin(a2);
+    RY[2][1] = 0;
+    RY[2][2] = cos(a2);
+    
+
+    float3x3 RZ;
+    RZ[0][0] = cos(a3);
+    RZ[0][1] = sin(a3);
+    RZ[0][2] = 0;
+
+    RZ[1][0] = -sin(a3);
+    RZ[1][1] = cos(a3);
+    RZ[1][2] = 0;
+
+    RZ[2][0] = 0;
+    RZ[2][1] = 0;
+    RZ[2][2] = 1;
+    
+    return mul(RZ, mul(RY, mul(RX, p)));
+}
+
+
+//##########################################
+//
+//   Space folding functions
+//
+//##########################################
+void planeFold(inout float4 z, float3 n, float d) {
+	z.xyz -= 2.0 * min(0.0, dot(z.xyz, n) - d) * n;
+}
+void absFold(inout float4 z, float3 c) {
+	z.xyz = abs(z.xyz - c) + c;
+}
+void sierpinskiFold(inout float4 z) {
+	z.xy -= min(z.x + z.y, 0.0);
+	z.xz -= min(z.x + z.z, 0.0);
+	z.yz -= min(z.y + z.z, 0.0);
+}
+void mengerFold(inout float4 z) {
+	float a = min(z.x - z.y, 0.0);
+	z.x -= a;
+	z.y += a;
+	a = min(z.x - z.z, 0.0);
+	z.x -= a;
+	z.z += a;
+	a = min(z.y - z.z, 0.0);
+	z.y -= a;
+	z.z += a;
+}
+void sphereFold(inout float4 z, float minR, float maxR) {
+	float r2 = dot(z.xyz, z.xyz);
+	z *= max(maxR / max(minR, r2), 1.0);
+}
+void boxFold(inout float4 z, float3 r) {
+	z.xyz = clamp(z.xyz, -r, r) * 2.0 - z.xyz;
+}
+void rotX(inout float4 z, float s, float c) {
+	z.yz = float2(c*z.y + s*z.z, c*z.z - s*z.y);
+}
+void rotY(inout float4 z, float s, float c) {
+	z.xz = float2(c*z.x - s*z.z, c*z.z + s*z.x);
+}
+void rotZ(inout float4 z, float s, float c) {
+	z.xy = float2(c*z.x + s*z.y, c*z.y - s*z.x);
+}
+void rotX(inout float4 z, float a) {
+	rotX(z, sin(a), cos(a));
+}
+void rotY(inout float4 z, float a) {
+	rotY(z, sin(a), cos(a));
+}
+void rotZ(inout float4 z, float a) {
+	rotZ(z, sin(a), cos(a));
+}
+
+
+//##########################################
+//
+//   Primative distance estimators
+//
+//##########################################
+float de_sphere(float4 p, float r) {
+	return (length(p.xyz) - r) / p.w;
+}
+float de_box(float4 p, float3 s) {
+	float3 a = abs(p.xyz) - s;
+	return (min(max(max(a.x, a.y), a.z), 0.0) + length(max(a, 0.0))) / p.w;
+}
+float de_tetrahedron(float4 p, float r) {
+	float md = max(max(-p.x - p.y - p.z, p.x + p.y - p.z),
+				   max(-p.x + p.y + p.z, p.x - p.y + p.z));
+	return (md - r) / (p.w * sqrt(3.0));
+}
+float de_inf_cross(float4 p, float r) {
+	float3 q = p.xyz * p.xyz;
+	return (sqrt(min(min(q.x + q.y, q.x + q.z), q.y + q.z)) - r) / p.w;
+}
+float de_inf_cross_xy(float4 p, float r) {
+	float3 q = p.xyz * p.xyz;
+	return (sqrt(min(q.x, q.y) + q.z) - r) / p.w;
+}
+float de_inf_line(float4 p, float3 n, float r) {
+	return (length(p.xyz - n*dot(p.xyz, n)) - r) / p.w;
+}
+
+//##########################################
+//
+//   Compiled
+//
+//##########################################
+
+// [pyspace]
+float de_obj1826121950160(float4 p) {
+	float4 o = p;
+	float d = 1e20;
+
+    for (int i = 0; i < FRACTAL_ITERATIONS; i++) {
+        p.xyz = rotate1(p.xyz); //rotY(p, 0.4259394650659996, 0.9047516632199634);
+        p.xyz = abs(p.xyz);
+        mengerFold(p);
+        p *= 1.3;
+        p.xyz = rotate2(p.xyz);
+        p.xyz += float3(-CX,-CY,-CZ);
+        p.z = -abs(p.z + 0) - 0;
+    }
+	
+	d = min(d, de_box(p, float3(4.8,4.8,4.8)));
+	return d;
+}
+float4 col_obj1826121950160(float4 p) {
+	float4 o = p;
+	float4 col = 1e20;
+	float4 newCol;
+	float3 orbit = 1e20;
+
+    for (int i = 0; i < FRACTAL_ITERATIONS; i++) {
+        p.xyz = rotate1(p.xyz); //rotY(p, 0.4259394650659996, 0.9047516632199634);
+        p.xyz = abs(p.xyz);
+        mengerFold(p);
+        orbit = min(orbit, abs((p.xyz - colorOffset)*colorMultiplier));
+        p *= 1.3;
+        p.xyz = rotate2(p.xyz);
+        p.xyz += float3(-CX,-CY,-CZ);
+        p.z = -abs(p.z + 0) - 0;
+    }
+	
+	newCol = float4(orbit, de_box(p, float3(4.8,4.8,4.8)));
+	if (newCol.w < col.w) { col = newCol; }
+	return col;
+}
+
+
+
+float de_1(float4 p)
+{
+    int i;
+    float4 p1;
+    const int MI = 30;
+    float d = 1e20;
+
+    for(i=0;i<MI;i++){
+        
+        p.xyz = rotate1(p.xyz);
+
+        p = abs(p); // p.x=abs(p.x);p.y=abs(p.y);p.z=abs(p.z); //
+        if(p.x-p.y<0){p1.x=p.y;p.y=p.x;p.x=p1.x;}
+        if(p.x-p.z<0){p1.x=p.z;p.z=p.x;p.x=p1.x;}
+        if(p.y-p.z<0){p1.y=p.z;p.z=p.y;p.y=p1.y;}
+  
+        p.z-=0.5*CZ*(scale-1)/scale;
+        p.z=-abs(-p.z);
+        p.z+=0.5*CZ*(scale-1)/scale;
+
+        p.xyz = rotate2(p.xyz);
+
+
+        p.x=scale*p.x-CX*(scale-1);
+        p.y=scale*p.y-CY*(scale-1);
+        p.z=scale*p.z;
+    }
+    d = min(d, de_box(p, float3(4.8,4.8,4.8)));
+    return d; //sqrt(p.x*p.x+p.y*p.y+p.z*p.z) * pow(scale, float(-i)); //min(d, deBox(p, float3(4.8, 4.8, 4.8))); //
+}
+
+float4 calcColor(float4 p)
+{
+    int i;
+    float4 p1;
+
+
+    const int MI = 30;
+    float4 orbit = 1e20;
+
+    for(i=0;i<MI;i++){
+        
+
+        p.xyz = rotate1(p.xyz);
+
+        p = abs(p); // p.x=abs(p.x);p.y=abs(p.y);p.z=abs(p.z); //
+        if(p.x-p.y<0){p1.x=p.y;p.y=p.x;p.x=p1.x;}
+        if(p.x-p.z<0){p1.x=p.z;p.z=p.x;p.x=p1.x;}
+        if(p.y-p.z<0){p1.y=p.z;p.z=p.y;p.y=p1.y;}
+  
+        p.z-=0.5*CZ*(scale-1)/scale;
+        p.z=-abs(-p.z);
+        p.z+=0.5*CZ*(scale-1)/scale;
+
+        p.xyz = rotate2(p.xyz);
+
+        p.x=scale*p.x-CX*(scale-1);
+        p.y=scale*p.y-CY*(scale-1);
+        p.z=scale*p.z;
+        orbit = min(orbit, abs(p + float4(colorOffset, 0)) * float4(colorMultiplier, 0) * epsillon);
+    }
+
+    return clamp(orbit, 0.0, 1.0);
+}
+
+
+// [/pyspace]
+
+//##########################################
+//
+//   Main code
+//
+//##########################################
+float4 ray_march(inout float4 p, float4 ray, float sharpness, float td) {
+	//March the ray
+	float d = MIN_DIST;
+	float s = 0.0;
+	float min_d = 1.0;
+	for (; s < MAX_MARCHES; s += 1.0) {
+		d = DE(p);
+		if (d < MIN_DIST) {
+			s += d / MIN_DIST;
+			break;
+		} else if (td > MAX_DIST) {
+			break;
+		}
+		td += d;
+		p += ray * d;
+		min_d = min(min_d, sharpness * d / td);
+	}
+	return float4(d, s, td, min_d);
+}
+float4 ray_march(inout float4 p, float3 ray, float sharpness, float td) {
+	return ray_march(p, float4(ray, 0.0), sharpness, td);
+}
+
+//A faster formula to find the gradient/normal direction of the DE(the w component is the average DE)
+//credit to http://www.iquilezles.org/www/articles/normalsSDF/normalsSDF.htm
+float3 calcNormal(float4 p, float dx) {
+	const float3 k = float3(1,-1,0);
+	return normalize(k.xyy*DE(p + k.xyyz*dx) +
+					 k.yyx*DE(p + k.yyxz*dx) +
+					 k.yxy*DE(p + k.yxyz*dx) +
+					 k.xxx*DE(p + k.xxxz*dx));
+}
+
+float4 scene(inout float4 origin, inout float4 ray, float vignette, float td) {
+	//Trace the ray
+	float4 p = origin;
+	float4 d_s_td_m = ray_march(p, ray, GLOW_SHARPNESS, td);
+	float d = d_s_td_m.x;
+	float s = d_s_td_m.y;
+	td = d_s_td_m.z;
+	float m = d_s_td_m.w;
+
+	//Determine the color for this pixel
+	float3 col = 0.0;
+	float min_dist = MIN_DIST * max(td * LOD_MULTIPLIER, 1.0);
+	if (d < min_dist) {
+		//Get the surface normal
+		float3 n = calcNormal(p, MIN_DIST * 10);
+		float3 reflected = ray.xyz - 2.0*dot(ray.xyz, n) * n;
+
+		//Get coloring
+		float3 orig_col = clamp(COL(p).xyz, 0.0, 1.0);
+
+		//Get if this point is in shadow
+		float k = 1.0;
+		#if SHADOWS_ENABLED
+			float4 light_pt = p;
+			light_pt.xyz += n * min_dist * 10;
+			float4 rm = ray_march(light_pt, LIGHT_DIRECTION, SHADOW_SHARPNESS, 0.0);
+			k = rm.w * min(rm.z, 1.0);
+		#endif
+
+		//Get specular
+		#if SPECULAR_HIGHLIGHT > 0
+			float specular = max(dot(reflected, LIGHT_DIRECTION), 0.0);
+			specular = pow(specular, SPECULAR_HIGHLIGHT);
+			col += specular * LIGHT_COLOR * k;
+		#endif
+
+		//Get diffuse lighting
+		#if DIFFUSE_ENHANCED_ENABLED
+			k = min(k, SHADOW_DARKNESS * 0.5 * (dot(n, LIGHT_DIRECTION) - 1.0) + 1.0);
+		#elif DIFFUSE_ENABLED
+			k = min(k, dot(n, LIGHT_DIRECTION));
+		#endif
+
+		//Don't make shadows entirely dark
+		k = max(k, 1.0 - SHADOW_DARKNESS);
+		col += orig_col * LIGHT_COLOR * k;
+
+		//Add small amount of ambient occlusion
+		float a = 1.0 / (1.0 + s * AMBIENT_OCCLUSION_STRENGTH);
+		col += (1.0 - a) * AMBIENT_OCCLUSION_COLOR_DELTA;
+
+		//Add fog effects
+		#if FOG_ENABLED
+			a = td / MAX_DIST;
+			col = (1.0 - a) * col + a * BACKGROUND_COLOR;
+		#endif
+
+		//Set up the reflection
+		origin = p + float4(n * min_dist * 100, 0.0);
+		ray = float4(reflected, 0.0);
+
+		//Apply vignette if needed
+		#if VIGNETTE_FOREGROUND
+			col *= vignette;
+		#endif
+	} else {
+		//Ray missed, start with solid background color
+		col += BACKGROUND_COLOR;
+
+		//Apply glow
+		#if GLOW_ENABLED
+			col += (1.0 - m) * (1.0 - m) * GLOW_COLOR_DELTA;
+		#endif
+
+		col *= vignette;
+		//Background specular
+		#if SUN_ENABLED
+			float sun_spec = dot(ray.xyz, LIGHT_DIRECTION) - 1.0 + SUN_SIZE;
+			sun_spec = min(exp(sun_spec * SUN_SHARPNESS / SUN_SIZE), 1.0);
+			col += LIGHT_COLOR * sun_spec;
+		#endif
+	}
+	return float4(col, td);
+}
+
+
+
+struct Ray {
+    float3 origin;
+    float3 direction;
+};
+
+Ray CreateRay(float3 origin, float3 direction) {
+    Ray ray;
+    ray.origin = origin;
+    ray.direction = direction;
+    return ray;
+}
+
+Ray CreateCameraRay(float2 uv) {
+    float3 origin = mul(_CameraToWorld, float4(0,0,0,1)).xyz;
+    float3 direction = mul(_CameraInverseProjection, float4(uv,0,1)).xyz;
+    direction = mul(_CameraToWorld, float4(direction,0)).xyz;
+    direction = normalize(direction);
+    return CreateRay(origin,direction);
+}
+
+
+[numthreads(8,8,1)]
+void CSMain (uint3 id : SV_DispatchThreadID)
+{
+    uint width,height;
+    Result.GetDimensions(width, height);
+    float2 iResolution = float2(width,height);
+
+    float2 uv = (id.xy / iResolution) * 2 - 1;
+    Ray ray = CreateCameraRay(uv);
+    float4 p = float4(ray.origin, 1);
+    float4 direction = float4(ray.direction, 0);
+
+
+	float4 col = 0.0;
+
+    //Get normalized screen coordinate
+    float2 screen_pos = (id.xy) / iResolution.xy;
+
+    //Reflect light if needed
+    float vignette = 1.0 - VIGNETTE_STRENGTH * length(screen_pos - 0.5);
+    col += scene(p, direction, vignette, 0.0);
+		
+
+	col /= (ANTIALIASING_SAMPLES * ANTIALIASING_SAMPLES * (MOTION_BLUR_LEVEL + 1));
+	Result[id.xy] = float4(clamp(col.xyz * EXPOSURE, 0.0, 1.0), min(col.w / MAX_DIST, 0.999));
+}
